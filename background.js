@@ -25,8 +25,9 @@ async function getFileConfig() {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error("Could not read config.json from extension package.");
   const cfg = await resp.json();
-  if (!cfg.domain)   throw new Error("'domain' is not set in config.json.");
-  if (!cfg.object)   throw new Error("'object' is not set in config.json.");
+  if (!cfg.domain)         throw new Error("'domain' is not set in config.json.");
+  if (!cfg.object)         throw new Error("'object' is not set in config.json.");
+  if (!cfg.ownerFieldName) throw new Error("'ownerFieldName' is not set in config.json. Updates are blocked until this is configured.");
   if (!cfg.filters?.conditions?.length) throw new Error("'filters.conditions' must be a non-empty array in config.json.");
   if (!cfg.filters?.logic)              throw new Error("'filters.logic' is not set in config.json.");
   if (!Array.isArray(cfg.updateFields) || cfg.updateFields.length === 0)
@@ -55,6 +56,18 @@ function buildWhereClause(filters) {
       throw new Error(`Logic expression references condition ${num} but only ${conditions.length} condition(s) are defined.`);
     return conditionToSql(conditions[idx]);
   });
+}
+
+// ---- Current User ----
+
+async function getCurrentUserId(session) {
+  const resp = await fetch(`${session.instanceUrl}/services/oauth2/userinfo`, {
+    headers: { Authorization: `Bearer ${session.sid}` },
+  });
+  if (!resp.ok) throw new Error(`Could not fetch current user info (HTTP ${resp.status}).`);
+  const info = await resp.json();
+  if (!info.user_id) throw new Error("user_id missing in userinfo response.");
+  return info.user_id;
 }
 
 // ---- Alarm Lifecycle ----
@@ -142,12 +155,9 @@ async function handleClearLogs() {
 // ---- Core: Scheduled Update Execution ----
 
 async function executeScheduledUpdate() {
-  const { domain, logLevel, object: objectName, filters, updateFields } = await getFileConfig();
+  const { domain, logLevel, object: objectName, ownerFieldName, filters, updateFields } = await getFileConfig();
   const log = (level, message) =>
     isLevelEnabled(level, logLevel) ? addLog(level, message) : Promise.resolve();
-
-  const whereClause = buildWhereClause(filters);
-  const soqlQuery = `SELECT Id FROM ${objectName} WHERE ${whereClause}`;
 
   try {
     // Step 1: Get session
@@ -156,16 +166,23 @@ async function executeScheduledUpdate() {
       throw new Error("No Salesforce session cookie. Please log in to Salesforce.");
     }
 
+    // Step 2: Get current session user ID and enforce owner filter
+    const currentUserId = await getCurrentUserId(session);
+    await log("FINEST", `Session user ID: ${currentUserId}`);
+
+    const whereClause = buildWhereClause(filters);
+    const soqlQuery = `SELECT Id FROM ${objectName} WHERE ${whereClause} AND ${ownerFieldName} = '${currentUserId}'`;
+
     await log("INFO",   `Starting update on ${objectName}...`);
     await log("FINEST", `SOQL: ${soqlQuery}`);
 
-    // Step 2: Check object-level update permission
+    // Step 3: Check object-level update permission
     const describe = await sfApiCall(session, `/services/data/v60.0/sobjects/${objectName}/describe`);
     if (!describe.updateable) {
       throw new Error(`You do not have update permission on ${objectName}.`);
     }
 
-    // Step 3: Check field-level update permissions
+    // Step 4: Check field-level update permissions
     const fieldMap = new Map(describe.fields.map((f) => [f.name, f]));
     for (const uf of updateFields) {
       const meta = fieldMap.get(uf.field);
@@ -177,7 +194,7 @@ async function executeScheduledUpdate() {
       }
     }
 
-    // Step 4: Query all records (handles pagination)
+    // Step 5: Query all records (handles pagination)
     const records = [];
     let queryResult = await sfApiCall(session, `/services/data/v60.0/query?q=${encodeURIComponent(soqlQuery)}`);
     records.push(...(queryResult.records || []));
@@ -200,7 +217,7 @@ async function executeScheduledUpdate() {
 
     await log("INFO", `Found ${records.length} record(s) to update.`);
 
-    // Step 5: Build the update payload per record and send PATCH requests
+    // Step 6: Build the update payload per record and send PATCH requests
     const updateBody = {};
     for (const uf of updateFields) {
       updateBody[uf.field] = castValue(uf.value, fieldMap.get(uf.field).type);
