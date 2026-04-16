@@ -17,13 +17,18 @@ $$(".tab-btn").forEach((btn) => {
   });
 });
 
-// ---- Status Helpers ----
-function showStatus(el, type, msg) {
-  el.textContent = msg;
-  el.className = `status-bar show ${type}`;
-}
-function clearStatus(el) {
-  el.className = "status-bar";
+// ---- Toast ----
+let toastTimer;
+function showToast(type, msg) {
+  const toast = $("#toast");
+  const colors = { ok: ["#0a2e1f", "#3dd68c"], error: ["#2e0f12", "#f05e6b"], info: ["#0d1f3c", "#4f8ff7"] };
+  const [bg, color] = colors[type] || colors.info;
+  toast.style.background = bg;
+  toast.style.color = color;
+  toast.textContent = msg;
+  toast.style.display = "block";
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast.style.display = "none"; }, 3000);
 }
 
 // ---- Send message to background ----
@@ -40,7 +45,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 function populateForm(c) {
-  $("#scheduledTime").value = c.scheduledTime || "09:00";
+  $("#scheduledTime").value = c.scheduledTime || "17:00";
 }
 
 // ---- Gather Config from Form ----
@@ -50,37 +55,23 @@ function gatherConfig() {
   };
 }
 
-// ---- Save ----
-$("#btnSave").addEventListener("click", async () => {
+// ---- Auto-save on time change ----
+$("#scheduledTime").addEventListener("change", async () => {
   const config = gatherConfig();
   const resp = await sendMsg({ action: "saveConfig", config });
-  showStatus(
-    $("#statusBar"),
+  showToast(
     resp.success ? "ok" : "error",
-    resp.success ? `Saved! Next run scheduled at ${config.scheduledTime} daily.` : resp.error
-  );
-});
-
-// ---- Test Connection ----
-$("#btnTest").addEventListener("click", async () => {
-  showStatus($("#statusBar"), "info", "Testing connection...");
-  const resp = await sendMsg({ action: "testConnection" });
-  showStatus(
-    $("#statusBar"),
-    resp.success ? "ok" : "error",
-    resp.success ? "Connection successful! Session is valid." : resp.error
+    resp.success ? `Scheduled time saved — daily run at ${config.scheduledTime}.` : resp.error
   );
 });
 
 // ---- Run Now ----
 $("#btnRunNow").addEventListener("click", async () => {
-  // Auto-save first
   const config = gatherConfig();
   await sendMsg({ action: "saveConfig", config });
-  showStatus($("#statusBar"), "info", "Running update now...");
+  showToast("info", "Running update now...");
   const resp = await sendMsg({ action: "runNow" });
-  showStatus(
-    $("#statusBar"),
+  showToast(
     resp.success ? "ok" : "error",
     resp.success ? "Run complete. Check the Logs tab for details." : resp.error
   );

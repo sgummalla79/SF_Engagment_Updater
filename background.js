@@ -93,7 +93,11 @@ async function handleSaveConfig(config) {
 
 async function handleGetConfig() {
   const data = await chrome.storage.local.get(STORAGE_KEY);
-  return { success: true, config: data[STORAGE_KEY] || null };
+  const config = data[STORAGE_KEY] || {};
+  if (!config.scheduledTime || config.scheduledTime === "09:00") {
+    config.scheduledTime = "17:00";
+  }
+  return { success: true, config };
 }
 
 async function handleGetLogs() {
@@ -256,7 +260,7 @@ async function rescheduleAlarm() {
   await chrome.alarms.clear(ALARM_NAME);
 
   const data = await chrome.storage.local.get(STORAGE_KEY);
-  const scheduledTime = data[STORAGE_KEY]?.scheduledTime || "09:00";
+  const scheduledTime = data[STORAGE_KEY]?.scheduledTime || "17:00";
 
   const [hours, minutes] = scheduledTime.split(":").map(Number);
   const now = new Date();

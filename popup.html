@@ -239,6 +239,17 @@
 </head>
 <body>
 
+  <!-- Toast -->
+  <div id="toast" style="
+    display:none;
+    position:sticky;
+    top:0;
+    z-index:100;
+    padding:9px 14px;
+    font-size:12px;
+    font-weight:500;
+  "></div>
+
   <!-- Header -->
   <div class="header">
     <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
@@ -262,16 +273,12 @@
 
     <div class="field">
       <label for="scheduledTime">Daily Run Time</label>
-      <input type="time" id="scheduledTime" value="09:00" />
+      <input type="time" id="scheduledTime" value="17:00" />
     </div>
 
     <div class="btn-row">
-      <button class="btn btn-primary" id="btnSave">Save Configuration</button>
-      <button class="btn btn-secondary" id="btnTest">Test Connection</button>
-      <button class="btn btn-secondary" id="btnRunNow">Run Now</button>
+      <button class="btn btn-primary" id="btnRunNow">Run Now</button>
     </div>
-
-    <div class="status-bar" id="statusBar"></div>
   </div>
 
   <!-- Tab: Logs -->
