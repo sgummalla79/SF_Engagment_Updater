@@ -18,7 +18,9 @@ Package the extension into a zip ready for Chrome Web Store upload.
 scripts\build.bat
 ```
 
-Both scripts produce `archcadence.zip` in the project root containing only the files needed for the extension. Development files (`README.md`, `PRIVACY_POLICY.md`, `store-description.txt`, `scripts/`) are excluded.
+Both scripts produce `archcadence.zip` containing only the files needed for the extension. Development files (`README.md`, `PRIVACY_POLICY.md`, `store-description.txt`, `scripts/`) are excluded.
+- **Mac/Linux** — outputs to the project root
+- **Windows** — outputs to `%TEMP%\archcadence.zip` (e.g. `C:\Users\you\AppData\Local\Temp\archcadence.zip`)
 
 **Prepare store screenshots** (resizes popup screenshots to the required 1280×800):
 ```bash
