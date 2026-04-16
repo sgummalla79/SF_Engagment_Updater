@@ -20,6 +20,12 @@ scripts\build.bat
 
 Both scripts produce `archcadence.zip` in the project root containing only the files needed for the extension. Development files (`README.md`, `PRIVACY_POLICY.md`, `store-description.txt`, `scripts/`) are excluded.
 
+**Prepare store screenshots** (resizes popup screenshots to the required 1280×800):
+```bash
+python3 scripts/prepare-screenshots.py screenshot1.png screenshot2.png
+```
+Outputs `store-screenshot-1.png`, `store-screenshot-2.png` in the project root, ready to upload to the Chrome Web Store.
+
 ---
 
 ## Installation (local / development)
