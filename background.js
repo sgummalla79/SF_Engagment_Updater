@@ -25,8 +25,10 @@ async function getFileConfig() {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error("Could not read config.json from extension package.");
   const cfg = await resp.json();
-  if (!cfg.domain)         throw new Error("'domain' is not set in config.json.");
-  if (!cfg.apiVersion)     throw new Error("'apiVersion' is not set in config.json (e.g. \"v60.0\").");
+  if (!cfg.domain)                           throw new Error("'domain' is not set in config.json.");
+  if (!cfg.apiVersion)                       throw new Error("'apiVersion' is not set in config.json (e.g. \"v60.0\").");
+  if (!Number.isInteger(cfg.maxRecords) || cfg.maxRecords < 1)
+    throw new Error("'maxRecords' must be a positive integer in config.json.");
   if (!cfg.object)         throw new Error("'object' is not set in config.json.");
   if (!cfg.ownerFieldName) throw new Error("'ownerFieldName' is not set in config.json. Updates are blocked until this is configured.");
   if (!cfg.filters?.conditions?.length) throw new Error("'filters.conditions' must be a non-empty array in config.json.");
@@ -140,6 +142,7 @@ async function handleGetConfig() {
   if (!config.scheduledTime || config.scheduledTime === "09:00") {
     config.scheduledTime = "17:00";
   }
+  if (config.isActive === undefined) config.isActive = true;
   return { success: true, config };
 }
 
@@ -156,7 +159,10 @@ async function handleClearLogs() {
 // ---- Core: Scheduled Update Execution ----
 
 async function executeScheduledUpdate() {
-  const { domain, apiVersion, logLevel, object: objectName, ownerFieldName, filters, updateFields } = await getFileConfig();
+  const storedData = await chrome.storage.local.get(STORAGE_KEY);
+  const isActive = storedData[STORAGE_KEY]?.isActive !== false;
+
+  const { domain, apiVersion, maxRecords, logLevel, object: objectName, ownerFieldName, filters, updateFields } = await getFileConfig();
   const log = (level, message) =>
     isLevelEnabled(level, logLevel) ? addLog(level, message) : Promise.resolve();
 
@@ -210,15 +216,21 @@ async function executeScheduledUpdate() {
       return;
     }
 
-    if (records.length > 15) {
-      await log("ERROR", `Query returned ${records.length} records — exceeds the 15-record safety limit. Update aborted. Refine your SOQL query and try again.`);
-      notify("Salesforce Update Aborted", `Query returned ${records.length} records, limit is 15.`);
+    if (records.length > maxRecords) {
+      await log("ERROR", `Query returned ${records.length} records — exceeds the maxRecords safety limit of ${maxRecords}. Update aborted. Refine your filters or increase maxRecords in config.json.`);
+      notify("Salesforce Update Aborted", `Query returned ${records.length} records, limit is ${maxRecords}.`);
       return;
     }
 
-    await log("INFO", `Found ${records.length} record(s) to update.`);
+    await log("INFO", `Found ${records.length} record(s).`);
 
-    // Step 6: Build the update payload per record and send PATCH requests
+    // Step 6: Update records (skipped when inactive)
+    if (!isActive) {
+      await log("SKIP", `Updates are deactivated. ${records.length} record(s) matched the query — no changes were made.`);
+      notify("Architect Cadence (Inactive)", `${records.length} record(s) matched. Updates skipped.`);
+      return;
+    }
+
     const updateBody = {};
     for (const uf of updateFields) {
       updateBody[uf.field] = castValue(uf.value, fieldMap.get(uf.field).type);
@@ -227,8 +239,8 @@ async function executeScheduledUpdate() {
     let successCount = 0;
     let failCount = 0;
     const errors = [];
-
     const updatedIds = [];
+
     for (const record of records) {
       try {
         await sfApiCall(

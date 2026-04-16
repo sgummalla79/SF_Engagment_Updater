@@ -1,25 +1,23 @@
 {
   "domain": "exp-cloud.my.salesforce.com",
   "apiVersion": "v66.0",
-  "logLevel": "finest",
+  "maxRecords": 15,
+  "logLevel": "info",
   "object": "Student__c",
   "ownerFieldName": "OwnerId",
   "filters": {
     "conditions": [
-      { "field": "Final_Result__c", "operator": "=",  "value": "Distinction" },
+      { "field": "Final_Result__c", "operator": "=",  "value": "Withdrawn" },
       { "field": "Id",              "operator": "IN", "value": [
           "a0uKd00000L6xfQIAR",
           "a0uKd00000L6xfRIAR",
-          "a0uKd00000L6xkpIAB",
-          "a0uKd00000L6xhzIAB",
-          "a0uKd00000L6xkrIAB",
-          "a0uKd00000L6y1VIAR"
+          "a0uKd00000L6xkpIAB"
         ]
       }
     ],
     "logic": "1 AND 2"
   },
   "updateFields": [
-    { "field": "Final_Result__c", "value": "Withdrawn" }
+    { "field": "Final_Result__c", "value": "Distinction" }
   ]
 }

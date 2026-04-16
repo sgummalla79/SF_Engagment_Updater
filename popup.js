@@ -25,18 +25,39 @@ function sendMsg(payload) {
   });
 }
 
+// ---- Toggle ----
+function applyToggleState(isActive) {
+  const btn = $("#btnToggle");
+  if (isActive) {
+    btn.textContent = "● Active";
+    btn.className = "btn btn-toggle active";
+  } else {
+    btn.textContent = "○ Inactive";
+    btn.className = "btn btn-toggle inactive";
+  }
+}
+
+$("#btnToggle").addEventListener("click", async () => {
+  const isActive = $("#btnToggle").classList.contains("inactive");
+  applyToggleState(isActive);
+  const config = { scheduledTime: $("#scheduledTime").value, isActive };
+  await sendMsg({ action: "saveConfig", config });
+  showToast("info", isActive ? "Updates activated." : "Updates deactivated — SOQL will still run.");
+});
+
 // ---- Init ----
 document.addEventListener("DOMContentLoaded", async () => {
   const resp = await sendMsg({ action: "getConfig" });
   if (resp?.config) {
     $("#scheduledTime").value = resp.config.scheduledTime || "17:00";
+    applyToggleState(resp.config.isActive !== false);
   }
   loadLogs();
 });
 
 // ---- Auto-save on time change ----
 $("#scheduledTime").addEventListener("change", async () => {
-  const config = { scheduledTime: $("#scheduledTime").value };
+  const config = { scheduledTime: $("#scheduledTime").value, isActive: $("#btnToggle").classList.contains("active") };
   const resp = await sendMsg({ action: "saveConfig", config });
   showToast(
     resp.success ? "ok" : "error",
@@ -46,7 +67,7 @@ $("#scheduledTime").addEventListener("change", async () => {
 
 // ---- Run Now ----
 $("#btnRunNow").addEventListener("click", async () => {
-  const config = { scheduledTime: $("#scheduledTime").value };
+  const config = { scheduledTime: $("#scheduledTime").value, isActive: $("#btnToggle").classList.contains("active") };
   await sendMsg({ action: "saveConfig", config });
   showToast("info", "Running update now...");
   const resp = await sendMsg({ action: "runNow" });

@@ -1,6 +1,6 @@
 # Privacy Policy — Architect Cadence
 
-_Last updated: April 15, 2026_
+_Last updated: April 16, 2026_
 
 ## Overview
 
@@ -22,6 +22,7 @@ The extension calls the Salesforce `/services/oauth2/userinfo` endpoint to retri
 The extension stores the following data in Chrome's local storage (`chrome.storage.local`) on your device only:
 
 - **Scheduled run time** — the daily time you configure for automatic runs
+- **Active / Inactive state** — whether the extension is currently set to apply updates or run in preview-only mode
 - **Execution logs** — a history of run results including timestamps, record counts, and any errors (up to 200 entries)
 
 This data never leaves your device and is not accessible to any third party.

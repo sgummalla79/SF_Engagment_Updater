@@ -45,6 +45,7 @@ All behaviour is controlled by `config.json` in the extension folder. Edit this 
 {
   "domain": "yourorg.my.salesforce.com",
   "apiVersion": "v60.0",
+  "maxRecords": 15,
   "logLevel": "info",
   "object": "Student__c",
   "ownerFieldName": "OwnerId",
@@ -63,11 +64,14 @@ All behaviour is controlled by `config.json` in the extension folder. Edit this 
 
 | Property | Required | Description |
 |---|---|---|
+| Property | Required | Description |
+|---|---|---|
 | `domain` | Yes | Your Salesforce org domain |
 | `apiVersion` | Yes | Salesforce REST API version, e.g. `v60.0` |
-| `logLevel` | No | `info` (default) or `finest` for full debug logs |
+| `maxRecords` | Yes | Safety limit — aborts the run if the query returns more records than this value |
+| `logLevel` | No | `info` (default), `finest`, `warn`, or `error` — see log levels table below |
 | `object` | Yes | API name of the Salesforce object to update |
-| `ownerFieldName` | Yes | Field used to match records to the current session user (e.g. `OwnerId`). Updates are blocked if omitted. |
+| `ownerFieldName` | Yes | Field used to match records to the current session user (e.g. `OwnerId`). Run is blocked if omitted. |
 | `filters.conditions` | Yes | Array of filter conditions — each has `field`, `operator`, and `value` |
 | `filters.logic` | Yes | Expression referencing condition numbers, e.g. `1 AND (2 OR 3) AND 4` |
 | `updateFields` | Yes | Array of `{ field, value }` pairs to apply to each matched record |
@@ -95,11 +99,12 @@ Numbers in `logic` are 1-based indexes into `conditions`. Parentheses and `AND`/
 
 1. **Session** — Reads the `sid` cookie from your active Salesforce browser session. You must be logged into Salesforce in the same browser.
 2. **Owner check** — Calls `/services/oauth2/userinfo` to get the current user's ID and appends `AND {ownerFieldName} = '{userId}'` to the query automatically.
-3. **Safety limit** — Aborts if the query returns more than 15 records. Refine your filters and try again.
-4. **Permission checks** — Verifies object-level and field-level update permissions before touching any data.
-5. **Query** — Builds and runs a SOQL query from your `filters` config.
-6. **Update** — Sends individual PATCH requests to update each matched record.
-7. **Scheduling** — Uses `chrome.alarms` to fire at the configured daily time.
+3. **Permission checks** — Verifies object-level and field-level update permissions before touching any data.
+4. **Query** — Builds and runs a SOQL query from your `filters` config.
+5. **Safety limit** — Aborts if the query returns more than `maxRecords` records. Refine your filters or increase the limit and try again.
+6. **Active / Inactive toggle** — If the extension is set to **Inactive** (toggle in the header), the SOQL query still runs and the matched record count is logged, but no records are updated. Use this to preview what would be affected before activating.
+7. **Update** — Sends individual PATCH requests to update each matched record (only when Active).
+8. **Scheduling** — Uses `chrome.alarms` to fire at the configured daily time.
 
 ---
 
