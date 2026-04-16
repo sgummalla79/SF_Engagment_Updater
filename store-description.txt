@@ -1,0 +1,36 @@
+Architect Cadence — Salesforce Record Updater
+
+Architect Cadence is a Chrome extension that automatically updates Salesforce records on a scheduled daily basis. Designed for Salesforce users who need to bulk-update specific records on a recurring cadence without manual intervention.
+
+HOW IT WORKS
+
+Architect Cadence reads a configuration file (config.json) bundled with the extension. The config defines which Salesforce object to target, what filter conditions to apply, and which fields to update. At the configured time each day — or on demand via the Run Now button — the extension:
+
+1. Connects to Salesforce using your active browser session (no separate login required)
+2. Runs the configured SOQL query to find matching records
+3. Verifies the records are owned by or assigned to the currently logged-in user
+4. Updates only those records with the configured field values
+5. Logs every action with timestamps so you have a full audit trail
+
+KEY FEATURES
+
+• Scheduled daily runs — set the time once, runs automatically every day
+• Owner-safe updates — only updates records belonging to the current session user, preventing accidental changes to other users' data
+• Safety limit — aborts if the query returns more than 15 records, protecting against runaway bulk updates
+• Structured SOQL builder — define filter conditions as structured JSON with full support for AND/OR logic and grouping (e.g. 1 AND (2 OR 3) AND 4)
+• Configurable log levels — set to INFO for summary logs or FINEST for full debug output including the generated SOQL query
+• Execution history — view timestamped logs of every run directly in the extension popup
+• Configurable API version — easily switch Salesforce API versions without touching code
+
+WHO IS IT FOR
+
+• Salesforce admins and power users who regularly update a fixed set of records
+• Teams running daily data hygiene or status-update workflows
+• Anyone who wants scheduled Salesforce automation without building a full Flow or Apex job
+
+PERMISSIONS USED
+
+• cookies — to read your active Salesforce session for authentication
+• storage — to save your scheduled run time and execution logs locally
+• alarms — to trigger the daily scheduled run
+• notifications — to alert you when a run completes or fails
