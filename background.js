@@ -8,6 +8,16 @@ const STORAGE_KEY = "sf_updater_config";
 const LOG_KEY = "sf_updater_logs";
 const MAX_LOGS = 200;
 
+// ---- Log Level Hierarchy ----
+// Lower number = more verbose. A configured level suppresses everything below it.
+const LOG_LEVELS = { FINEST: 0, INFO: 1, OK: 1, SKIP: 1, WARN: 2, ERROR: 3 };
+
+function isLevelEnabled(messageLevel, configuredLevel) {
+  const msgPriority = LOG_LEVELS[messageLevel.toUpperCase()] ?? 1;
+  const cfgPriority = LOG_LEVELS[(configuredLevel || "info").toUpperCase()] ?? 1;
+  return msgPriority >= cfgPriority;
+}
+
 // ---- Config File ----
 
 async function getFileConfig() {
@@ -15,17 +25,36 @@ async function getFileConfig() {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error("Could not read config.json from extension package.");
   const cfg = await resp.json();
-  if (!cfg.domain) throw new Error("'domain' is not set in config.json.");
-  if (!cfg.soqlQuery) throw new Error("'soqlQuery' is not set in config.json.");
+  if (!cfg.domain)   throw new Error("'domain' is not set in config.json.");
+  if (!cfg.object)   throw new Error("'object' is not set in config.json.");
+  if (!cfg.filters?.conditions?.length) throw new Error("'filters.conditions' must be a non-empty array in config.json.");
+  if (!cfg.filters?.logic)              throw new Error("'filters.logic' is not set in config.json.");
   if (!Array.isArray(cfg.updateFields) || cfg.updateFields.length === 0)
     throw new Error("'updateFields' must be a non-empty array in config.json.");
   return cfg;
 }
 
-function extractObjectName(soql) {
-  const match = soql.match(/\bFROM\s+(\w+)/i);
-  if (!match) throw new Error("Could not determine object name from soqlQuery in config.json.");
-  return match[1];
+// ---- SOQL Builder ----
+
+function conditionToSql(c) {
+  const op = c.operator.toUpperCase();
+  if (op === "IN" || op === "NOT IN") {
+    const list = (Array.isArray(c.value) ? c.value : [c.value])
+      .map((v) => `'${v}'`).join(", ");
+    return `${c.field} ${op} (${list})`;
+  }
+  const val = typeof c.value === "string" ? `'${c.value}'` : c.value;
+  return `${c.field} ${c.operator} ${val}`;
+}
+
+function buildWhereClause(filters) {
+  const { conditions, logic } = filters;
+  return logic.replace(/\b(\d+)\b/g, (_, num) => {
+    const idx = parseInt(num, 10) - 1;
+    if (idx < 0 || idx >= conditions.length)
+      throw new Error(`Logic expression references condition ${num} but only ${conditions.length} condition(s) are defined.`);
+    return conditionToSql(conditions[idx]);
+  });
 }
 
 // ---- Alarm Lifecycle ----
@@ -113,8 +142,12 @@ async function handleClearLogs() {
 // ---- Core: Scheduled Update Execution ----
 
 async function executeScheduledUpdate() {
-  const { domain, soqlQuery, updateFields } = await getFileConfig();
-  const objectName = extractObjectName(soqlQuery);
+  const { domain, logLevel, object: objectName, filters, updateFields } = await getFileConfig();
+  const log = (level, message) =>
+    isLevelEnabled(level, logLevel) ? addLog(level, message) : Promise.resolve();
+
+  const whereClause = buildWhereClause(filters);
+  const soqlQuery = `SELECT Id FROM ${objectName} WHERE ${whereClause}`;
 
   try {
     // Step 1: Get session
@@ -123,7 +156,8 @@ async function executeScheduledUpdate() {
       throw new Error("No Salesforce session cookie. Please log in to Salesforce.");
     }
 
-    await addLog("INFO", `Starting update on ${objectName}...`);
+    await log("INFO",   `Starting update on ${objectName}...`);
+    await log("FINEST", `SOQL: ${soqlQuery}`);
 
     // Step 2: Check object-level update permission
     const describe = await sfApiCall(session, `/services/data/v60.0/sobjects/${objectName}/describe`);
@@ -143,7 +177,7 @@ async function executeScheduledUpdate() {
       }
     }
 
-    // Step 4: Query all records using the SOQL from config.json (handles pagination)
+    // Step 4: Query all records (handles pagination)
     const records = [];
     let queryResult = await sfApiCall(session, `/services/data/v60.0/query?q=${encodeURIComponent(soqlQuery)}`);
     records.push(...(queryResult.records || []));
@@ -153,18 +187,18 @@ async function executeScheduledUpdate() {
     }
 
     if (records.length === 0) {
-      await addLog("INFO", `No records matched the SOQL query on ${objectName}. Nothing to update.`);
+      await log("INFO", `No records matched the SOQL query on ${objectName}. Nothing to update.`);
       notify("Salesforce Update", `No records matched the SOQL query on ${objectName}.`);
       return;
     }
 
     if (records.length > 15) {
-      await addLog("ERROR", `Query returned ${records.length} records — exceeds the 15-record safety limit. Update aborted. Refine your SOQL query and try again.`);
+      await log("ERROR", `Query returned ${records.length} records — exceeds the 15-record safety limit. Update aborted. Refine your SOQL query and try again.`);
       notify("Salesforce Update Aborted", `Query returned ${records.length} records, limit is 15.`);
       return;
     }
 
-    await addLog("INFO", `Found ${records.length} record(s) to update.`);
+    await log("INFO", `Found ${records.length} record(s) to update.`);
 
     // Step 5: Build the update payload per record and send PATCH requests
     const updateBody = {};
@@ -194,15 +228,15 @@ async function executeScheduledUpdate() {
     }
 
     if (updatedIds.length > 0) {
-      await addLog("INFO", `Updated record IDs:\n${updatedIds.join("\n")}`);
+      await log("FINEST", `Updated record IDs:\n${updatedIds.join("\n")}`);
     }
 
     const summary = failCount > 0
       ? `Update complete — ${successCount} of ${records.length} records updated. ${failCount} failed.`
       : `Update complete — ${successCount} of ${records.length} records updated successfully.`;
-    await addLog(failCount > 0 ? "WARN" : "OK", summary);
+    await log(failCount > 0 ? "WARN" : "OK", summary);
     if (errors.length > 0) {
-      await addLog("ERROR", "Failed records:\n" + errors.join("\n"));
+      await log("ERROR", `Failed records:\n${errors.join("\n")}`);
     }
     notify("Salesforce Update Complete", summary);
   } catch (err) {
