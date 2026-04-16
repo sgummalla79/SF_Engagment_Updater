@@ -26,6 +26,7 @@ async function getFileConfig() {
   if (!resp.ok) throw new Error("Could not read config.json from extension package.");
   const cfg = await resp.json();
   if (!cfg.domain)         throw new Error("'domain' is not set in config.json.");
+  if (!cfg.apiVersion)     throw new Error("'apiVersion' is not set in config.json (e.g. \"v60.0\").");
   if (!cfg.object)         throw new Error("'object' is not set in config.json.");
   if (!cfg.ownerFieldName) throw new Error("'ownerFieldName' is not set in config.json. Updates are blocked until this is configured.");
   if (!cfg.filters?.conditions?.length) throw new Error("'filters.conditions' must be a non-empty array in config.json.");
@@ -113,12 +114,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // ---- Handler Implementations ----
 
 async function handleTestConnection() {
-  const { domain } = await getFileConfig();
+  const { domain, apiVersion } = await getFileConfig();
   const session = await getSalesforceSession(domain);
   if (!session) {
     return { success: false, error: "No Salesforce session cookie found for this domain." };
   }
-  const userInfo = await sfApiCall(session, "/services/data/v60.0/");
+  const userInfo = await sfApiCall(session, `/services/data/${apiVersion}/`);
   return { success: true, userInfo };
 }
 
@@ -155,7 +156,7 @@ async function handleClearLogs() {
 // ---- Core: Scheduled Update Execution ----
 
 async function executeScheduledUpdate() {
-  const { domain, logLevel, object: objectName, ownerFieldName, filters, updateFields } = await getFileConfig();
+  const { domain, apiVersion, logLevel, object: objectName, ownerFieldName, filters, updateFields } = await getFileConfig();
   const log = (level, message) =>
     isLevelEnabled(level, logLevel) ? addLog(level, message) : Promise.resolve();
 
@@ -177,7 +178,7 @@ async function executeScheduledUpdate() {
     await log("FINEST", `SOQL: ${soqlQuery}`);
 
     // Step 3: Check object-level update permission
-    const describe = await sfApiCall(session, `/services/data/v60.0/sobjects/${objectName}/describe`);
+    const describe = await sfApiCall(session, `/services/data/${apiVersion}/sobjects/${objectName}/describe`);
     if (!describe.updateable) {
       throw new Error(`You do not have update permission on ${objectName}.`);
     }
@@ -196,7 +197,7 @@ async function executeScheduledUpdate() {
 
     // Step 5: Query all records (handles pagination)
     const records = [];
-    let queryResult = await sfApiCall(session, `/services/data/v60.0/query?q=${encodeURIComponent(soqlQuery)}`);
+    let queryResult = await sfApiCall(session, `/services/data/${apiVersion}/query?q=${encodeURIComponent(soqlQuery)}`);
     records.push(...(queryResult.records || []));
     while (!queryResult.done && queryResult.nextRecordsUrl) {
       queryResult = await sfApiCall(session, queryResult.nextRecordsUrl);
@@ -232,7 +233,7 @@ async function executeScheduledUpdate() {
       try {
         await sfApiCall(
           session,
-          `/services/data/v60.0/sobjects/${objectName}/${record.Id}`,
+          `/services/data/${apiVersion}/sobjects/${objectName}/${record.Id}`,
           "PATCH",
           updateBody
         );

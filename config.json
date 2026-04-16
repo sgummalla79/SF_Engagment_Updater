@@ -1,5 +1,6 @@
 {
   "domain": "exp-cloud.my.salesforce.com",
+  "apiVersion": "v66.0",
   "logLevel": "finest",
   "object": "Student__c",
   "ownerFieldName": "OwnerId",
