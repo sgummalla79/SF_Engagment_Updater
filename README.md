@@ -1,4 +1,4 @@
-# ArchCadence — Chrome Extension
+# Architect Cadence — Chrome Extension
 
 A Chrome extension that auto-updates Architect Engagement records in Salesforce on a daily cadence. It reads the Salesforce session cookie, checks field-level and object-level update permissions, and performs scheduled daily record updates — zero intervention needed.
 

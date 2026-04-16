@@ -3,19 +3,6 @@
 // ============================================================
 
 const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => document.querySelectorAll(sel);
-
-// ---- Tab Switching ----
-$$(".tab-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    $$(".tab-btn").forEach((b) => b.classList.remove("active"));
-    $$(".tab-panel").forEach((p) => p.classList.remove("active"));
-    btn.classList.add("active");
-    $(`#tab-${btn.dataset.tab}`).classList.add("active");
-
-    if (btn.dataset.tab === "logs") loadLogs();
-  });
-});
 
 // ---- Toast ----
 let toastTimer;
@@ -38,26 +25,18 @@ function sendMsg(payload) {
   });
 }
 
-// ---- Load Config on Open ----
+// ---- Init ----
 document.addEventListener("DOMContentLoaded", async () => {
   const resp = await sendMsg({ action: "getConfig" });
-  if (resp?.config) populateForm(resp.config);
+  if (resp?.config) {
+    $("#scheduledTime").value = resp.config.scheduledTime || "17:00";
+  }
+  loadLogs();
 });
-
-function populateForm(c) {
-  $("#scheduledTime").value = c.scheduledTime || "17:00";
-}
-
-// ---- Gather Config from Form ----
-function gatherConfig() {
-  return {
-    scheduledTime: $("#scheduledTime").value,
-  };
-}
 
 // ---- Auto-save on time change ----
 $("#scheduledTime").addEventListener("change", async () => {
-  const config = gatherConfig();
+  const config = { scheduledTime: $("#scheduledTime").value };
   const resp = await sendMsg({ action: "saveConfig", config });
   showToast(
     resp.success ? "ok" : "error",
@@ -67,14 +46,15 @@ $("#scheduledTime").addEventListener("change", async () => {
 
 // ---- Run Now ----
 $("#btnRunNow").addEventListener("click", async () => {
-  const config = gatherConfig();
+  const config = { scheduledTime: $("#scheduledTime").value };
   await sendMsg({ action: "saveConfig", config });
   showToast("info", "Running update now...");
   const resp = await sendMsg({ action: "runNow" });
   showToast(
     resp.success ? "ok" : "error",
-    resp.success ? "Run complete. Check the Logs tab for details." : resp.error
+    resp.success ? "Run complete. Check logs below for details." : resp.error
   );
+  loadLogs();
 });
 
 // ---- Logs ----
@@ -92,9 +72,8 @@ async function loadLogs() {
     .map((l) => {
       const ts = new Date(l.ts).toLocaleString();
       return `<div class="log-entry">
-        <span class="log-ts">${ts}</span>
-        <span class="log-level ${l.level}">${l.level}</span>
-        <span class="log-msg">${escHtml(l.message)}</span>
+        <div><span class="log-ts">${ts}</span> <span class="log-level ${l.level}">${l.level}</span></div>
+        <div class="log-msg">${escHtml(l.message)}</div>
       </div>`;
     })
     .join("");

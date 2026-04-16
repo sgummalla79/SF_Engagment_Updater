@@ -31,18 +31,18 @@ function extractObjectName(soql) {
 // ---- Alarm Lifecycle ----
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("[ArchCadence] Extension installed.");
+  console.log("[Architect Cadence] Extension installed.");
   rescheduleAlarm();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  console.log("[ArchCadence] Browser started.");
+  console.log("[Architect Cadence] Browser started.");
   rescheduleAlarm();
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === ALARM_NAME) {
-    console.log("[ArchCadence] Alarm fired at", new Date().toISOString());
+    console.log("[Architect Cadence] Alarm fired at", new Date().toISOString());
     await executeScheduledUpdate();
   }
 });
@@ -123,7 +123,7 @@ async function executeScheduledUpdate() {
       throw new Error("No Salesforce session cookie. Please log in to Salesforce.");
     }
 
-    await addLog("INFO", `Starting scheduled update on ${objectName}...`);
+    await addLog("INFO", `Starting update on ${objectName}...`);
 
     // Step 2: Check object-level update permission
     const describe = await sfApiCall(session, `/services/data/v60.0/sobjects/${objectName}/describe`);
@@ -143,15 +143,24 @@ async function executeScheduledUpdate() {
       }
     }
 
-    await addLog("INFO", "Permission checks passed.");
-
-    // Step 4: Query records using the SOQL from config.json
-    const queryResult = await sfApiCall(session, `/services/data/v60.0/query?q=${encodeURIComponent(soqlQuery)}`);
-    const records = queryResult.records || [];
+    // Step 4: Query all records using the SOQL from config.json (handles pagination)
+    const records = [];
+    let queryResult = await sfApiCall(session, `/services/data/v60.0/query?q=${encodeURIComponent(soqlQuery)}`);
+    records.push(...(queryResult.records || []));
+    while (!queryResult.done && queryResult.nextRecordsUrl) {
+      queryResult = await sfApiCall(session, queryResult.nextRecordsUrl);
+      records.push(...(queryResult.records || []));
+    }
 
     if (records.length === 0) {
-      await addLog("INFO", "No records matched the filter. Nothing to update.");
+      await addLog("INFO", `No records matched the SOQL query on ${objectName}. Nothing to update.`);
       notify("Salesforce Update", `No records matched the SOQL query on ${objectName}.`);
+      return;
+    }
+
+    if (records.length > 15) {
+      await addLog("ERROR", `Query returned ${records.length} records — exceeds the 15-record safety limit. Update aborted. Refine your SOQL query and try again.`);
+      notify("Salesforce Update Aborted", `Query returned ${records.length} records, limit is 15.`);
       return;
     }
 
@@ -167,6 +176,7 @@ async function executeScheduledUpdate() {
     let failCount = 0;
     const errors = [];
 
+    const updatedIds = [];
     for (const record of records) {
       try {
         await sfApiCall(
@@ -176,13 +186,20 @@ async function executeScheduledUpdate() {
           updateBody
         );
         successCount++;
+        updatedIds.push(record.Id);
       } catch (err) {
         failCount++;
         errors.push(`${record.Id}: ${err.message}`);
       }
     }
 
-    const summary = `Updated ${successCount}/${records.length} records. Failures: ${failCount}.`;
+    if (updatedIds.length > 0) {
+      await addLog("INFO", `Updated record IDs:\n${updatedIds.join("\n")}`);
+    }
+
+    const summary = failCount > 0
+      ? `Update complete — ${successCount} of ${records.length} records updated. ${failCount} failed.`
+      : `Update complete — ${successCount} of ${records.length} records updated successfully.`;
     await addLog(failCount > 0 ? "WARN" : "OK", summary);
     if (errors.length > 0) {
       await addLog("ERROR", "Failed records:\n" + errors.join("\n"));
@@ -278,7 +295,7 @@ async function rescheduleAlarm() {
     periodInMinutes: 24 * 60, // repeat every 24 hours
   });
 
-  console.log(`[ArchCadence] Alarm scheduled. Next fire: ${next.toLocaleString()} (in ${Math.round(delayInMinutes)} min)`);
+  console.log(`[Architect Cadence] Alarm scheduled. Next fire: ${next.toLocaleString()} (in ${Math.round(delayInMinutes)} min)`);
 }
 
 // ---- Logging ----

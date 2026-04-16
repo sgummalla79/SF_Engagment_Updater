@@ -1,7 +1,7 @@
 {
   "domain": "exp-cloud.my.salesforce.com",
-  "soqlQuery": "SELECT Id FROM Architect_Engagement__c WHERE Status__c = 'Active'",
+  "soqlQuery": "SELECT Id FROM Student__c WHERE Final_Result__c = 'Withdrawn' and Id in ('a0uKd00000L6xfQIAR','a0uKd00000L6xfRIAR','a0uKd00000L6xkpIAB','a0uKd00000L6xhzIAB','a0uKd00000L6xkrIAB','a0uKd00000L6y1VIAR')",
   "updateFields": [
-    { "field": "Status__c", "value": "Completed" }
+    { "field": "Final_Result__c", "value": "Distinction" }
   ]
 }
