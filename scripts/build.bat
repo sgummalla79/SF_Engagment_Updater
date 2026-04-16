@@ -5,7 +5,7 @@ REM Requires PowerShell 5+ (built into Windows 10/11).
 
 cd /d "%~dp0\.."
 
-set OUTPUT=archcadence.zip
+set OUTPUT=/temp/archcadence.zip
 
 if exist "%OUTPUT%" del "%OUTPUT%"
 

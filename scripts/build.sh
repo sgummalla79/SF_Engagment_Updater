@@ -5,7 +5,7 @@
 
 cd "$(dirname "$0")/.." || exit 1
 
-OUTPUT="archcadence.zip"
+OUTPUT="/temp/archcadence.zip"
 
 rm -f "$OUTPUT"
 
