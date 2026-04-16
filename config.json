@@ -1,0 +1,7 @@
+{
+  "domain": "exp-cloud.my.salesforce.com",
+  "soqlQuery": "SELECT Id FROM Architect_Engagement__c WHERE Status__c = 'Active'",
+  "updateFields": [
+    { "field": "Status__c", "value": "Completed" }
+  ]
+}
