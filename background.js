@@ -9,6 +9,7 @@ const LOG_KEY = "sf_updater_logs";
 const ENGAGEMENTS_CACHE_KEY = "sf_engagements_cache";
 const ENGAGEMENTS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const ENGAGEMENT_LOG_KEY = "sf_engagement_logs";
+const PENDING_CALLS_KEY = "sf_pending_calls";
 const MAX_LOGS = 200;
 
 // ---- Log Level Hierarchy ----
@@ -100,6 +101,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === ALARM_NAME) {
     console.log("[Architect Cadence] Alarm fired at", new Date().toISOString());
     await executeScheduledUpdate();
+  } else if (alarm.name.startsWith("oncall-")) {
+    const recordId = alarm.name.slice("oncall-".length);
+    await autoRevertCall(recordId);
   }
 });
 
@@ -145,58 +149,134 @@ async function handleGetSession() {
   }
 }
 
+function parseDurationToMinutes(duration) {
+  if (duration.endsWith("s")) return parseInt(duration) / 60;
+  if (duration.endsWith("h")) return parseInt(duration) * 60;
+  return parseInt(duration); // assume minutes
+}
+
 function resolvePlaceholders(value, context) {
   if (typeof value !== "string") return value;
   return value.replace(/\{(\w+)\}/g, (_, key) => context[key] ?? "");
 }
 
 async function handleCallCompleted(recordId) {
-  const cfg = await getFileConfig();
-  const session = await getSalesforceSession(cfg.domain);
-  if (!session) throw new Error("No Salesforce session. Please log in.");
+  try {
+    const cfg = await getFileConfig();
+    const session = await getSalesforceSession(cfg.domain);
+    if (!session) {
+      await addEngagementLog("ERROR", `Call Completed failed — no Salesforce session for [${recordId}]`);
+      throw new Error("No Salesforce session. Please log in.");
+    }
 
-  const action = cfg.engagementsView?.callCompletedAction;
-  if (!action) throw new Error("'engagementsView.callCompletedAction' is not configured.");
+    const action = cfg.engagementsView?.callCompletedAction;
+    if (!action) throw new Error("'engagementsView.callCompletedAction' is not configured.");
 
-  const updateBody = {};
-  for (const uf of action.updateFields || []) {
-    updateBody[uf.field] = uf.value;
+    const updateBody = {};
+    for (const uf of action.updateFields || []) {
+      updateBody[uf.field] = uf.value;
+    }
+    await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${cfg.object}/${recordId}`, "PATCH", updateBody);
+
+    const updateLines = Object.entries(updateBody).map(([k, v]) => `  ${k} → "${v}"`).join("\n");
+    await addEngagementLog("OK", `Call Completed (manual) — Updated ${cfg.object} [${recordId}]\n${updateLines}`);
+
+    // Cancel pending auto-revert alarm
+    await chrome.alarms.clear(`oncall-${recordId}`);
+
+    // Remove from pending calls
+    const pendingData = await chrome.storage.local.get(PENDING_CALLS_KEY);
+    const pending = pendingData[PENDING_CALLS_KEY] || {};
+    delete pending[recordId];
+    await chrome.storage.local.set({ [PENDING_CALLS_KEY]: pending });
+
+    await chrome.storage.local.remove(ENGAGEMENTS_CACHE_KEY);
+    return { success: true };
+  } catch (err) {
+    await addEngagementLog("ERROR", `Call Completed failed for [${recordId}]: ${err.message}`);
+    throw err;
   }
-  await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${cfg.object}/${recordId}`, "PATCH", updateBody);
+}
 
-  const updateLines = Object.entries(updateBody).map(([k, v]) => `  ${k} → "${v}"`).join("\n");
-  await addEngagementLog("OK", `Call Completed — Updated ${cfg.object} [${recordId}]\n${updateLines}`);
+async function autoRevertCall(recordId) {
+  try {
+    const cfg = await getFileConfig();
+    const session = await getSalesforceSession(cfg.domain);
+    if (!session) {
+      await addEngagementLog("WARN", `Auto-revert skipped — no session for [${recordId}]`);
+      return;
+    }
 
-  await chrome.storage.local.remove(ENGAGEMENTS_CACHE_KEY);
-  return { success: true };
+    const action = cfg.engagementsView?.callCompletedAction;
+    if (!action) return;
+
+    const updateBody = {};
+    for (const uf of action.updateFields || []) {
+      updateBody[uf.field] = uf.value;
+    }
+    await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${cfg.object}/${recordId}`, "PATCH", updateBody);
+
+    const updateLines = Object.entries(updateBody).map(([k, v]) => `  ${k} → "${v}"`).join("\n");
+    await addEngagementLog("OK", `Auto-revert — Timer expired for [${recordId}]\n${updateLines}`);
+
+    // Clean up pending entry
+    const pendingData = await chrome.storage.local.get(PENDING_CALLS_KEY);
+    const pending = pendingData[PENDING_CALLS_KEY] || {};
+    delete pending[recordId];
+    await chrome.storage.local.set({ [PENDING_CALLS_KEY]: pending });
+
+    await chrome.storage.local.remove(ENGAGEMENTS_CACHE_KEY);
+  } catch (err) {
+    await addEngagementLog("ERROR", `Auto-revert failed for [${recordId}]: ${err.message}`);
+  }
 }
 
 async function handleOnCall(recordId, duration, callType) {
-  const cfg = await getFileConfig();
-  const session = await getSalesforceSession(cfg.domain);
-  if (!session) throw new Error("No Salesforce session. Please log in.");
+  try {
+    const cfg = await getFileConfig();
+    const session = await getSalesforceSession(cfg.domain);
+    if (!session) {
+      await addEngagementLog("ERROR", `On Call failed — no Salesforce session for [${recordId}]`);
+      throw new Error("No Salesforce session. Please log in.");
+    }
 
-  const onCallAction = cfg.engagementsView?.onCallAction;
-  if (!onCallAction) throw new Error("'engagementsView.onCallAction' is not configured.");
+    const onCallAction = cfg.engagementsView?.onCallAction;
+    if (!onCallAction) throw new Error("'engagementsView.onCallAction' is not configured.");
 
-  const context = { recordId, duration: String(duration), callType };
+    const context = { recordId, duration: String(duration), callType };
 
-  // Update the engagement record
-  const updateBody = {};
-  for (const uf of onCallAction.updateFields || []) {
-    updateBody[uf.field] = resolvePlaceholders(uf.value, context);
+    // Update the engagement record
+    const updateBody = {};
+    for (const uf of onCallAction.updateFields || []) {
+      updateBody[uf.field] = resolvePlaceholders(uf.value, context);
+    }
+    await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${cfg.object}/${recordId}`, "PATCH", updateBody);
+
+    const updateLines = Object.entries(updateBody).map(([k, v]) => `  ${k} → "${v}"`).join("\n");
+    await addEngagementLog("OK", `On Call (${callType}, ${duration}) — Updated ${cfg.object} [${recordId}]\n${updateLines}`);
+
+    // Schedule auto-revert alarm
+    const alarmName = `oncall-${recordId}`;
+    const delayInMinutes = parseDurationToMinutes(duration);
+    await chrome.alarms.clear(alarmName);
+    await chrome.alarms.create(alarmName, { delayInMinutes });
+
+    // Store pending call so it can be cancelled on manual Call Completed
+    const pendingData = await chrome.storage.local.get(PENDING_CALLS_KEY);
+    const pending = pendingData[PENDING_CALLS_KEY] || {};
+    pending[recordId] = { callType, duration, scheduledAt: Date.now(), revertAt: Date.now() + delayInMinutes * 60000 };
+    await chrome.storage.local.set({ [PENDING_CALLS_KEY]: pending });
+
+    await addEngagementLog("INFO", `Auto-revert timer set — [${recordId}] will revert in ${duration}`);
+
+    // Invalidate engagements cache
+    await chrome.storage.local.remove(ENGAGEMENTS_CACHE_KEY);
+
+    return { success: true };
+  } catch (err) {
+    await addEngagementLog("ERROR", `On Call failed for [${recordId}]: ${err.message}`);
+    throw err;
   }
-  await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${cfg.object}/${recordId}`, "PATCH", updateBody);
-
-  const updateLines = Object.entries(updateBody)
-    .map(([k, v]) => `  ${k} → "${v}"`)
-    .join("\n");
-  await addEngagementLog("OK", `Updated ${cfg.object} [${recordId}] (${callType} call, ${duration} min)\n${updateLines}`);
-
-  // Invalidate engagements cache so next load fetches fresh data
-  await chrome.storage.local.remove(ENGAGEMENTS_CACHE_KEY);
-
-  return { success: true };
 }
 
 async function handleGetEngagements(force = false) {
@@ -216,6 +296,8 @@ async function handleGetEngagements(force = false) {
 
     const info = await getUserInfo(session);
     const userId = info.user_id;
+    const userName = info.name || info.preferred_username || userId;
+    await addEngagementLog("INFO", `Session established — ${userName} (${userId})`);
 
     const viewCfg = cfg.engagementsView || {};
     const nameField   = viewCfg.nameField   || "Name";
@@ -229,7 +311,16 @@ async function handleGetEngagements(force = false) {
       : "";
     const soql = `SELECT ${fields.join(", ")} FROM ${cfg.object} WHERE ${cfg.ownerFieldName} = '${userId}'${extraWhere} ORDER BY Name LIMIT 50`;
 
-    const result = await sfApiCall(session, `/services/data/${cfg.apiVersion}/query?q=${encodeURIComponent(soql)}`);
+    await addEngagementLog("INFO", `Querying ${cfg.object}: ${soql}`);
+
+    let result;
+    try {
+      result = await sfApiCall(session, `/services/data/${cfg.apiVersion}/query?q=${encodeURIComponent(soql)}`);
+    } catch (err) {
+      await addEngagementLog("ERROR", `Query failed — ${err.message}`);
+      throw err;
+    }
+
     const records = result.records || [];
     const scheduledStatus = cfg.engagementsView?.onCallAction?.updateFields?.[0]?.value || "";
     const durations = cfg.engagementsView?.onCallAction?.durations || [];
@@ -238,6 +329,7 @@ async function handleGetEngagements(force = false) {
     await addEngagementLog("INFO", `DB pull — ${records.length} engagement(s) fetched from Salesforce`);
     return { success: true, hasSession: true, records, view, scheduledStatus, durations };
   } catch (err) {
+    await addEngagementLog("ERROR", `Engagements load failed — ${err.message}`);
     return { success: false, hasSession: false, error: err.message, records: [] };
   }
 }
@@ -301,9 +393,11 @@ async function executeScheduledUpdate() {
       throw new Error("No Salesforce session cookie. Please log in to Salesforce.");
     }
 
-    // Step 2: Get current session user ID and enforce owner filter
-    const currentUserId = await getCurrentUserId(session);
-    await log("FINEST", `Session user ID: ${currentUserId}`);
+    // Step 2: Get current session user and enforce owner filter
+    const userInfo = await getUserInfo(session);
+    const currentUserId = userInfo.user_id;
+    const currentUserName = userInfo.name || userInfo.preferred_username || currentUserId;
+    await log("FINEST", `Session user: ${currentUserName} (${currentUserId})`);
 
     const whereClause = buildWhereClause(filters);
     const soqlQuery = `SELECT Id FROM ${objectName} WHERE ${whereClause} AND ${ownerFieldName} = '${currentUserId}'`;
@@ -312,10 +406,17 @@ async function executeScheduledUpdate() {
     await log("FINEST", `SOQL: ${soqlQuery}`);
 
     // Step 3: Check object-level update permission
-    const describe = await sfApiCall(session, `/services/data/${apiVersion}/sobjects/${objectName}/describe`);
+    await log("INFO", `Fetching describe for ${objectName}...`);
+    let describe;
+    try {
+      describe = await sfApiCall(session, `/services/data/${apiVersion}/sobjects/${objectName}/describe`);
+    } catch (err) {
+      throw new Error(`Describe failed for ${objectName}: ${err.message}`);
+    }
     if (!describe.updateable) {
       throw new Error(`You do not have update permission on ${objectName}.`);
     }
+    await log("INFO", `Permission check passed for ${objectName}.`);
 
     // Step 4: Check field-level update permissions
     const fieldMap = new Map(describe.fields.map((f) => [f.name, f]));
@@ -328,6 +429,7 @@ async function executeScheduledUpdate() {
         throw new Error(`You do not have update permission on field "${uf.field}".`);
       }
     }
+    await log("INFO", `Field-level permissions verified for: ${updateFields.map(f => f.field).join(", ")}`);
 
     // Step 5: Query all records (handles pagination)
     const records = [];
@@ -369,6 +471,9 @@ async function executeScheduledUpdate() {
     const errors = [];
     const updatedIds = [];
 
+    const updateLines = Object.entries(updateBody).map(([k, v]) => `  ${k} → "${v}"`).join("\n");
+    await log("INFO", `Updating ${records.length} record(s) with:\n${updateLines}`);
+
     for (const record of records) {
       try {
         await sfApiCall(
@@ -379,14 +484,12 @@ async function executeScheduledUpdate() {
         );
         successCount++;
         updatedIds.push(record.Id);
+        await log("FINEST", `  ✓ Updated [${record.Id}]`);
       } catch (err) {
         failCount++;
         errors.push(`${record.Id}: ${err.message}`);
+        await log("ERROR", `  ✗ Failed [${record.Id}]: ${err.message}`);
       }
-    }
-
-    if (updatedIds.length > 0) {
-      await log("FINEST", `Updated record IDs:\n${updatedIds.join("\n")}`);
     }
 
     const summary = failCount > 0
