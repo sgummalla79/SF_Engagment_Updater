@@ -112,7 +112,7 @@ async function loadEngagements(force = false) {
     const status = escHtml(r[statusField] || "—");
     const stage  = escHtml(r[stageField]  || "—");
     const titlePart = nameField !== titleField ? ` — <span class="eng-title">${title}</span>` : "";
-    const opts = durations.map((d) => `<option value="${d}">${d} min</option>`).join("");
+    const opts = durations.map((d) => `<option value="${d}">${d}</option>`).join("");
     const isScheduled = (r[statusField] || "") === scheduledStatus;
     const line3 = isScheduled
       ? `<span class="eng-scheduled-label">✓ Scheduled</span>
