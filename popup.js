@@ -65,6 +65,7 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
     btn.classList.add("active");
     document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
     if (btn.dataset.tab === "engagements") loadEngagements();
+    if (btn.dataset.tab === "logs") loadLogs();
   });
 });
 
@@ -73,7 +74,7 @@ async function loadSessionUser() {
   const resp = await sendMsg({ action: "getSession" });
   const el = $("#sessionUser");
   if (resp?.hasSession && resp.userName) {
-    el.textContent = resp.userName;
+    el.textContent = 'Connected as : ' + resp.userName;
     el.classList.remove("no-session");
   } else {
     el.textContent = "Not signed in";
