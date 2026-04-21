@@ -240,20 +240,36 @@ async function handleOnCall(recordId, duration, callType) {
       throw new Error("No Salesforce session. Please log in.");
     }
 
-    const onCallAction = cfg.engagementsView?.onCallAction;
-    if (!onCallAction) throw new Error("'engagementsView.onCallAction' is not configured.");
+    const action = callType === "Customer"
+      ? cfg.engagementsView?.customerCallAction
+      : cfg.engagementsView?.internalCallAction;
+    if (!action) throw new Error(`'engagementsView.${callType === "Customer" ? "customerCallAction" : "internalCallAction"}' is not configured.`);
 
     const context = { recordId, duration: String(duration), callType };
 
     // Update the engagement record
     const updateBody = {};
-    for (const uf of onCallAction.updateFields || []) {
+    for (const uf of action.updateFields || []) {
       updateBody[uf.field] = resolvePlaceholders(uf.value, context);
     }
     await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${cfg.object}/${recordId}`, "PATCH", updateBody);
 
     const updateLines = Object.entries(updateBody).map(([k, v]) => `  ${k} → "${v}"`).join("\n");
     await addEngagementLog("OK", `On Call (${callType}, ${duration}) — Updated ${cfg.object} [${recordId}]\n${updateLines}`);
+
+    // Create associated records
+    for (const rec of action.createRecords || []) {
+      const createBody = {};
+      for (const f of rec.fields || []) {
+        createBody[f.field] = resolvePlaceholders(f.value, context);
+      }
+      try {
+        await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${rec.object}`, "POST", createBody);
+        await addEngagementLog("OK", `Created ${rec.object} for [${recordId}] — Name: "${createBody.Name || ""}"`);
+      } catch (err) {
+        await addEngagementLog("WARN", `Failed to create ${rec.object} for [${recordId}]: ${err.message}`);
+      }
+    }
 
     // Schedule auto-revert alarm
     const alarmName = `oncall-${recordId}`;
@@ -322,8 +338,8 @@ async function handleGetEngagements(force = false) {
     }
 
     const records = result.records || [];
-    const scheduledStatus = cfg.engagementsView?.onCallAction?.updateFields?.[0]?.value || "";
-    const durations = cfg.engagementsView?.onCallAction?.durations || [];
+    const scheduledStatus = cfg.engagementsView?.customerCallAction?.updateFields?.[0]?.value || "";
+    const durations = cfg.engagementsView?.callDurations || [];
     const view = { nameField, titleField, statusField, stageField };
     await chrome.storage.local.set({ [ENGAGEMENTS_CACHE_KEY]: { ts: Date.now(), records, view, scheduledStatus, durations } });
     await addEngagementLog("INFO", `DB pull — ${records.length} engagement(s) fetched from Salesforce`);

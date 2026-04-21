@@ -32,8 +32,8 @@
         { "field": "Engagement_Status__c", "value": "Waiting on Customer" }
       ]
     },
-    "onCallAction": {
-      "durations": ["30s", "1m", "5m", "15m", "30m", "45m", "1h"],
+    "callDurations": ["30s", "1m", "5m", "15m", "30m", "45m", "1h"],
+    "customerCallAction": {
       "updateFields": [
         { "field": "Engagement_Status__c", "value": "Call/Meeting Scheduled" }
       ],
@@ -41,10 +41,28 @@
         {
           "object": "Activity__c",
           "fields": [
-            { "field": "Name",        "value": "On Call" },
-            { "field": "Notes__c",    "value": "On Call activity logged via Architect Cadence" },
-            { "field": "Priority__c", "value": "Normal" },
-            { "field": "Type__c",     "value": "{callType}" }
+            { "field": "Name",          "value": "Customer Call" },
+            { "field": "Priority__c",   "value": "High" },
+            { "field": "Type__c",       "value": "External Meeting" },
+            { "field": "Notes__c",      "value": "Please update notes on this record after customer is completed" },
+            { "field": "Engagement__c", "value": "{recordId}" }
+          ]
+        }
+      ]
+    },
+    "internalCallAction": {
+      "updateFields": [
+        { "field": "Engagement_Status__c", "value": "Call/Meeting Scheduled" }
+      ],
+      "createRecords": [
+        {
+          "object": "Activity__c",
+          "fields": [
+            { "field": "Name",          "value": "Internal Call with CSM/Product" },
+            { "field": "Priority__c",   "value": "Medium" },
+            { "field": "Type__c",       "value": "Internal Meeting" },
+            { "field": "Notes__c",      "value": "Please update notes on this record after internal is completed" },
+            { "field": "Engagement__c", "value": "{recordId}" }
           ]
         }
       ]
