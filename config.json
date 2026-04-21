@@ -26,6 +26,28 @@
       "conditions": [
         { "field": "Stage__c", "operator": "=", "value": "Delivery" }
       ]
+    },
+    "callCompletedAction": {
+      "updateFields": [
+        { "field": "Engagement_Status__c", "value": "Waiting on Customer" }
+      ]
+    },
+    "onCallAction": {
+      "durations": ["30s", "1m", "5m", "15m", "30m", "45m", "1h"],
+      "updateFields": [
+        { "field": "Engagement_Status__c", "value": "Call/Meeting Scheduled" }
+      ],
+      "createRecords": [
+        {
+          "object": "Activity__c",
+          "fields": [
+            { "field": "Name",        "value": "On Call" },
+            { "field": "Notes__c",    "value": "On Call activity logged via Architect Cadence" },
+            { "field": "Priority__c", "value": "Normal" },
+            { "field": "Type__c",     "value": "{callType}" }
+          ]
+        }
+      ]
     }
   }
 }

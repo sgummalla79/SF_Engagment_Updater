@@ -97,11 +97,10 @@
       transition: all .15s;
       white-space: nowrap;
     }
-    .btn-primary { background: var(--accent); color: #fff; }
-    .btn-primary:hover { background: var(--accent-hover); }
-    .btn-danger { background: var(--red); color: #fff; }
-    .btn-danger:hover { opacity: 0.9; }
+    .btn-primary, .btn-danger { background: #ffffff; color: #111111; }
+    .btn-primary:hover, .btn-danger:hover { opacity: 0.85; }
     .btn-sm { padding: 4px 10px; font-size: 11px; }
+    :root.light .btn-primary, :root.light .btn-danger { background: #111111; color: #ffffff; }
 
     /* ---- Toggle ---- */
     .btn-toggle {
@@ -265,8 +264,13 @@
     .eng-line2 {
       display: flex;
       align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .eng-line3 {
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
     .eng-badge {
       font-size: 10px;
@@ -280,22 +284,25 @@
     }
     .eng-badge.status { color: #f0ac44; background: rgba(240,172,68,0.15); }
     .eng-badge.stage  { color: #4f8ff7; background: rgba(79,143,247,0.15); }
-
     :root.light .eng-badge.status { color: #92400e; background: #fde68a; }
     :root.light .eng-badge.stage  { color: #1e3a8a; background: #bfdbfe; }
-    .btn-oncall {
+
+    .btn-call {
       font-size: 11px;
       font-weight: 700;
-      padding: 3px 10px;
+      padding: 4px 10px;
       border-radius: var(--radius);
       border: none;
-      background: var(--green);
-      color: #0a2e1f;
       cursor: pointer;
       transition: opacity .15s;
       white-space: nowrap;
     }
-    .btn-oncall:hover { opacity: 0.85; }
+    .btn-call { cursor: pointer; transition: opacity .15s; }
+    .btn-call:hover { opacity: 0.85; }
+    .btn-call:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn-call.internal { background: var(--green); color: #0a2e1f; }
+    .btn-call.customer { background: var(--green); color: #0a2e1f; }
+
     .eng-duration {
       font-size: 11px;
       padding: 3px 6px;
@@ -307,6 +314,83 @@
       outline: none;
     }
     .eng-duration:focus { border-color: var(--accent); }
+    .eng-duration:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    .eng-scheduled-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--green);
+    }
+    .btn-call-completed {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: var(--radius);
+      border: none;
+      background: var(--red);
+      color: #fff;
+      cursor: pointer;
+      transition: opacity .15s;
+      white-space: nowrap;
+    }
+    .btn-call-completed:hover { opacity: 0.85; }
+    .btn-call-completed:disabled { opacity: 0.35; cursor: not-allowed; }
+    .eng-card.scheduled {
+      opacity: 0.6;
+      border-color: transparent;
+      background: var(--surface2);
+    }
+
+    /* ---- Accordion ---- */
+    .accordion {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    .acc-section { flex-shrink: 0; border-bottom: 1px solid var(--border); }
+    .acc-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 16px;
+      cursor: pointer;
+      background: var(--surface);
+      user-select: none;
+    }
+    .acc-header:hover { background: var(--surface2); }
+    .acc-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .acc-chevron { font-size: 10px; transition: transform .2s; display: inline-block; }
+    .acc-section.open .acc-chevron { transform: rotate(90deg); }
+    .acc-count {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 8px;
+      background: var(--surface2);
+      color: var(--text-dim);
+    }
+    .acc-body {
+      display: none;
+      height: 140px;
+      overflow-y: auto;
+      font-family: 'Consolas', 'SF Mono', monospace;
+      font-size: 11px;
+      padding: 6px 16px;
+      background: var(--bg);
+    }
+    .acc-section.open .acc-body { display: block; }
+
     .empty-msg { color: var(--text-dim); text-align: center; padding: 30px 0; }
     .eng-loading { color: var(--text-dim); text-align: center; padding: 30px 0; font-size: 12px; }
   </style>
@@ -341,13 +425,26 @@
       <button class="btn btn-primary" id="btnRunNow">Run Now</button>
       <button class="btn btn-primary" id="btnOpenConfig">Show Config</button>
     </div>
-    <div class="logs-section">
-      <div class="logs-header">
-        <span class="logs-title">Execution History</span>
-        <button class="btn btn-danger btn-sm" id="btnClearLogs">Clear</button>
+    <div class="accordion" id="logAccordion">
+      <div class="acc-section open" id="accEngagements">
+        <div class="acc-header">
+          <span class="acc-title">
+            <span class="acc-chevron">▶</span> Engagement View
+            <span class="acc-count" id="engLogCount">0</span>
+          </span>
+          <button class="btn btn-danger btn-sm" id="btnClearEngLogs">Clear</button>
+        </div>
+        <div class="acc-body" id="engLogList"><div class="empty-msg">No logs yet.</div></div>
       </div>
-      <div class="log-list" id="logList">
-        <div class="empty-msg">No logs yet.</div>
+      <div class="acc-section" id="accScheduler">
+        <div class="acc-header">
+          <span class="acc-title">
+            <span class="acc-chevron">▶</span> Daily Scheduler
+            <span class="acc-count" id="schedLogCount">0</span>
+          </span>
+          <button class="btn btn-danger btn-sm" id="btnClearSchedLogs">Clear</button>
+        </div>
+        <div class="acc-body" id="schedLogList"><div class="empty-msg">No logs yet.</div></div>
       </div>
     </div>
   </div>

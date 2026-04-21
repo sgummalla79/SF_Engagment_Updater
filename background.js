@@ -8,6 +8,7 @@ const STORAGE_KEY = "sf_updater_config";
 const LOG_KEY = "sf_updater_logs";
 const ENGAGEMENTS_CACHE_KEY = "sf_engagements_cache";
 const ENGAGEMENTS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const ENGAGEMENT_LOG_KEY = "sf_engagement_logs";
 const MAX_LOGS = 200;
 
 // ---- Log Level Hierarchy ----
@@ -114,6 +115,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     clearLogs: () => handleClearLogs(),
     getSession: () => handleGetSession(),
     getEngagements: () => handleGetEngagements(msg.force),
+    onCall: () => handleOnCall(msg.recordId, msg.duration, msg.callType),
+    callCompleted: () => handleCallCompleted(msg.recordId),
+    getEngagementLogs: () => handleGetEngagementLogs(),
+    clearEngagementLogs: () => handleClearEngagementLogs(),
   };
 
   const handler = handlers[msg.action];
@@ -140,6 +145,60 @@ async function handleGetSession() {
   }
 }
 
+function resolvePlaceholders(value, context) {
+  if (typeof value !== "string") return value;
+  return value.replace(/\{(\w+)\}/g, (_, key) => context[key] ?? "");
+}
+
+async function handleCallCompleted(recordId) {
+  const cfg = await getFileConfig();
+  const session = await getSalesforceSession(cfg.domain);
+  if (!session) throw new Error("No Salesforce session. Please log in.");
+
+  const action = cfg.engagementsView?.callCompletedAction;
+  if (!action) throw new Error("'engagementsView.callCompletedAction' is not configured.");
+
+  const updateBody = {};
+  for (const uf of action.updateFields || []) {
+    updateBody[uf.field] = uf.value;
+  }
+  await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${cfg.object}/${recordId}`, "PATCH", updateBody);
+
+  const updateLines = Object.entries(updateBody).map(([k, v]) => `  ${k} → "${v}"`).join("\n");
+  await addEngagementLog("OK", `Call Completed — Updated ${cfg.object} [${recordId}]\n${updateLines}`);
+
+  await chrome.storage.local.remove(ENGAGEMENTS_CACHE_KEY);
+  return { success: true };
+}
+
+async function handleOnCall(recordId, duration, callType) {
+  const cfg = await getFileConfig();
+  const session = await getSalesforceSession(cfg.domain);
+  if (!session) throw new Error("No Salesforce session. Please log in.");
+
+  const onCallAction = cfg.engagementsView?.onCallAction;
+  if (!onCallAction) throw new Error("'engagementsView.onCallAction' is not configured.");
+
+  const context = { recordId, duration: String(duration), callType };
+
+  // Update the engagement record
+  const updateBody = {};
+  for (const uf of onCallAction.updateFields || []) {
+    updateBody[uf.field] = resolvePlaceholders(uf.value, context);
+  }
+  await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${cfg.object}/${recordId}`, "PATCH", updateBody);
+
+  const updateLines = Object.entries(updateBody)
+    .map(([k, v]) => `  ${k} → "${v}"`)
+    .join("\n");
+  await addEngagementLog("OK", `Updated ${cfg.object} [${recordId}] (${callType} call, ${duration} min)\n${updateLines}`);
+
+  // Invalidate engagements cache so next load fetches fresh data
+  await chrome.storage.local.remove(ENGAGEMENTS_CACHE_KEY);
+
+  return { success: true };
+}
+
 async function handleGetEngagements(force = false) {
   try {
     const cfg = await getFileConfig();
@@ -149,7 +208,9 @@ async function handleGetEngagements(force = false) {
     if (!force) {
       const cached = (await chrome.storage.local.get(ENGAGEMENTS_CACHE_KEY))[ENGAGEMENTS_CACHE_KEY];
       if (cached && (Date.now() - cached.ts) < ENGAGEMENTS_CACHE_TTL_MS) {
-        return { success: true, hasSession: true, records: cached.records, view: cached.view, fromCache: true };
+        const age = Math.round((Date.now() - cached.ts) / 1000);
+        await addEngagementLog("INFO", `Cache hit — ${cached.records.length} engagement(s) served from cache (${age}s old)`);
+        return { success: true, hasSession: true, records: cached.records, view: cached.view, scheduledStatus: cached.scheduledStatus || "", durations: cached.durations || [], fromCache: true };
       }
     }
 
@@ -170,9 +231,12 @@ async function handleGetEngagements(force = false) {
 
     const result = await sfApiCall(session, `/services/data/${cfg.apiVersion}/query?q=${encodeURIComponent(soql)}`);
     const records = result.records || [];
+    const scheduledStatus = cfg.engagementsView?.onCallAction?.updateFields?.[0]?.value || "";
+    const durations = cfg.engagementsView?.onCallAction?.durations || [];
     const view = { nameField, titleField, statusField, stageField };
-    await chrome.storage.local.set({ [ENGAGEMENTS_CACHE_KEY]: { ts: Date.now(), records, view } });
-    return { success: true, hasSession: true, records, view };
+    await chrome.storage.local.set({ [ENGAGEMENTS_CACHE_KEY]: { ts: Date.now(), records, view, scheduledStatus, durations } });
+    await addEngagementLog("INFO", `DB pull — ${records.length} engagement(s) fetched from Salesforce`);
+    return { success: true, hasSession: true, records, view, scheduledStatus, durations };
   } catch (err) {
     return { success: false, hasSession: false, error: err.message, records: [] };
   }
@@ -337,6 +401,8 @@ async function executeScheduledUpdate() {
     await addLog("ERROR", err.message);
     notify("Salesforce Update Failed", err.message);
   }
+
+  await chrome.storage.local.remove(ENGAGEMENTS_CACHE_KEY);
 }
 
 // ---- Salesforce Helpers ----
@@ -434,6 +500,24 @@ async function addLog(level, message) {
   logs.unshift({ ts: new Date().toISOString(), level, message });
   if (logs.length > MAX_LOGS) logs.length = MAX_LOGS;
   await chrome.storage.local.set({ [LOG_KEY]: logs });
+}
+
+async function addEngagementLog(level, message) {
+  const data = await chrome.storage.local.get(ENGAGEMENT_LOG_KEY);
+  const logs = data[ENGAGEMENT_LOG_KEY] || [];
+  logs.unshift({ ts: new Date().toISOString(), level, message });
+  if (logs.length > MAX_LOGS) logs.length = MAX_LOGS;
+  await chrome.storage.local.set({ [ENGAGEMENT_LOG_KEY]: logs });
+}
+
+async function handleGetEngagementLogs() {
+  const data = await chrome.storage.local.get(ENGAGEMENT_LOG_KEY);
+  return { success: true, logs: data[ENGAGEMENT_LOG_KEY] || [] };
+}
+
+async function handleClearEngagementLogs() {
+  await chrome.storage.local.set({ [ENGAGEMENT_LOG_KEY]: [] });
+  return { success: true };
 }
 
 // ---- Notifications ----
