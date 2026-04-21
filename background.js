@@ -176,10 +176,10 @@ async function handleCallCompleted(recordId) {
     for (const uf of action.updateFields || []) {
       updateBody[uf.field] = uf.value;
     }
-    await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${cfg.object}/${recordId}`, "PATCH", updateBody);
-
     const updateLines = Object.entries(updateBody).map(([k, v]) => `  ${k} → "${v}"`).join("\n");
-    await addEngagementLog("OK", `Call Completed (manual) — Updated ${cfg.object} [${recordId}]\n${updateLines}`);
+    await addEngagementLog("INFO", `PATCH ${cfg.object} [${recordId}] — Call Completed (manual)\n${updateLines}`);
+    await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${cfg.object}/${recordId}`, "PATCH", updateBody);
+    await addEngagementLog("OK", `PATCH ${cfg.object} [${recordId}] — updated successfully`);
 
     // Cancel pending auto-revert alarm
     await chrome.alarms.clear(`oncall-${recordId}`);
@@ -214,10 +214,10 @@ async function autoRevertCall(recordId) {
     for (const uf of action.updateFields || []) {
       updateBody[uf.field] = uf.value;
     }
-    await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${cfg.object}/${recordId}`, "PATCH", updateBody);
-
     const updateLines = Object.entries(updateBody).map(([k, v]) => `  ${k} → "${v}"`).join("\n");
-    await addEngagementLog("OK", `Auto-revert — Timer expired for [${recordId}]\n${updateLines}`);
+    await addEngagementLog("INFO", `PATCH ${cfg.object} [${recordId}] — Auto-revert (timer expired)\n${updateLines}`);
+    await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${cfg.object}/${recordId}`, "PATCH", updateBody);
+    await addEngagementLog("OK", `PATCH ${cfg.object} [${recordId}] — auto-reverted successfully`);
 
     // Clean up pending entry
     const pendingData = await chrome.storage.local.get(PENDING_CALLS_KEY);
@@ -252,10 +252,10 @@ async function handleOnCall(recordId, duration, callType) {
     for (const uf of action.updateFields || []) {
       updateBody[uf.field] = resolvePlaceholders(uf.value, context);
     }
-    await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${cfg.object}/${recordId}`, "PATCH", updateBody);
-
     const updateLines = Object.entries(updateBody).map(([k, v]) => `  ${k} → "${v}"`).join("\n");
-    await addEngagementLog("OK", `On Call (${callType}, ${duration}) — Updated ${cfg.object} [${recordId}]\n${updateLines}`);
+    await addEngagementLog("INFO", `PATCH ${cfg.object} [${recordId}] — ${callType} Call (${duration})\n${updateLines}`);
+    await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${cfg.object}/${recordId}`, "PATCH", updateBody);
+    await addEngagementLog("OK", `PATCH ${cfg.object} [${recordId}] — updated successfully`);
 
     // Create associated records
     for (const rec of action.createRecords || []) {
@@ -263,11 +263,13 @@ async function handleOnCall(recordId, duration, callType) {
       for (const f of rec.fields || []) {
         createBody[f.field] = resolvePlaceholders(f.value, context);
       }
+      const createLines = Object.entries(createBody).map(([k, v]) => `  ${k}: "${v}"`).join("\n");
+      await addEngagementLog("INFO", `POST ${rec.object} — creating activity for [${recordId}]\n${createLines}`);
       try {
-        await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${rec.object}`, "POST", createBody);
-        await addEngagementLog("OK", `Created ${rec.object} for [${recordId}] — Name: "${createBody.Name || ""}"`);
+        const result = await sfApiCall(session, `/services/data/${cfg.apiVersion}/sobjects/${rec.object}`, "POST", createBody);
+        await addEngagementLog("OK", `POST ${rec.object} — created successfully (id: ${result.id || "?"})`);
       } catch (err) {
-        await addEngagementLog("WARN", `Failed to create ${rec.object} for [${recordId}]: ${err.message}`);
+        await addEngagementLog("ERROR", `POST ${rec.object} failed for [${recordId}]: ${err.message}`);
       }
     }
 
@@ -418,8 +420,8 @@ async function executeScheduledUpdate() {
     const whereClause = buildWhereClause(filters);
     const soqlQuery = `SELECT Id FROM ${objectName} WHERE ${whereClause} AND ${ownerFieldName} = '${currentUserId}'`;
 
-    await log("INFO",   `Starting update on ${objectName}...`);
-    await log("FINEST", `SOQL: ${soqlQuery}`);
+    await log("INFO", `Starting update on ${objectName}...`);
+    await log("INFO", `SOQL: ${soqlQuery}`);
 
     // Step 3: Check object-level update permission
     await log("INFO", `Fetching describe for ${objectName}...`);
@@ -500,7 +502,7 @@ async function executeScheduledUpdate() {
         );
         successCount++;
         updatedIds.push(record.Id);
-        await log("FINEST", `  ✓ Updated [${record.Id}]`);
+        await log("INFO", `  ✓ PATCH ${objectName} [${record.Id}] — updated successfully`);
       } catch (err) {
         failCount++;
         errors.push(`${record.Id}: ${err.message}`);
