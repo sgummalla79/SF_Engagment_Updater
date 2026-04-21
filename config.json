@@ -3,21 +3,29 @@
   "apiVersion": "v66.0",
   "maxRecords": 15,
   "logLevel": "info",
-  "object": "Student__c",
+  "object": "Engagement__c",
   "ownerFieldName": "OwnerId",
-  "filters": {
-    "conditions": [
-      { "field": "Final_Result__c", "operator": "=",  "value": "Withdrawn" },
-      { "field": "Id",              "operator": "IN", "value": [
-          "a0uKd00000L6xfQIAR",
-          "a0uKd00000L6xfRIAR",
-          "a0uKd00000L6xkpIAB"
-        ]
-      }
-    ],
-    "logic": "1 AND 2"
+  "dailyScheduler": {
+    "filters": {
+      "conditions": [
+        { "field": "Stage__c", "operator": "=", "value": "Delivery" },
+        { "field": "Engagement_Status__c", "operator": "!=", "value": "Waiting on Customer" }
+      ],
+      "logic": "1 AND 2"
+    },
+    "updateFields": [
+      { "field": "Engagement_Status__c", "value": "Waiting on Customer" }
+    ]
   },
-  "updateFields": [
-    { "field": "Final_Result__c", "value": "Distinction" }
-  ]
+  "engagementsView": {
+    "nameField": "Name",
+    "titleField": "Title__c",
+    "statusField": "Engagement_Status__c",
+    "stageField": "Stage__c",
+    "filters": {
+      "conditions": [
+        { "field": "Stage__c", "operator": "=", "value": "Delivery" }
+      ]
+    }
+  }
 }

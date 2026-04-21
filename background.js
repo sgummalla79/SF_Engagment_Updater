@@ -6,6 +6,8 @@
 const ALARM_NAME = "sf-daily-update";
 const STORAGE_KEY = "sf_updater_config";
 const LOG_KEY = "sf_updater_logs";
+const ENGAGEMENTS_CACHE_KEY = "sf_engagements_cache";
+const ENGAGEMENTS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_LOGS = 200;
 
 // ---- Log Level Hierarchy ----
@@ -31,10 +33,12 @@ async function getFileConfig() {
     throw new Error("'maxRecords' must be a positive integer in config.json.");
   if (!cfg.object)         throw new Error("'object' is not set in config.json.");
   if (!cfg.ownerFieldName) throw new Error("'ownerFieldName' is not set in config.json. Updates are blocked until this is configured.");
-  if (!cfg.filters?.conditions?.length) throw new Error("'filters.conditions' must be a non-empty array in config.json.");
-  if (!cfg.filters?.logic)              throw new Error("'filters.logic' is not set in config.json.");
-  if (!Array.isArray(cfg.updateFields) || cfg.updateFields.length === 0)
-    throw new Error("'updateFields' must be a non-empty array in config.json.");
+  if (!cfg.dailyScheduler?.filters?.conditions?.length)
+    throw new Error("'dailyScheduler.filters.conditions' must be a non-empty array in config.json.");
+  if (cfg.dailyScheduler.filters.conditions.length > 1 && !cfg.dailyScheduler.filters.logic)
+    throw new Error("'dailyScheduler.filters.logic' is required when more than one condition is defined.");
+  if (!Array.isArray(cfg.dailyScheduler?.updateFields) || cfg.dailyScheduler.updateFields.length === 0)
+    throw new Error("'dailyScheduler.updateFields' must be a non-empty array in config.json.");
   return cfg;
 }
 
@@ -53,6 +57,7 @@ function conditionToSql(c) {
 
 function buildWhereClause(filters) {
   const { conditions, logic } = filters;
+  if (!logic) return conditionToSql(conditions[0]);
   return logic.replace(/\b(\d+)\b/g, (_, num) => {
     const idx = parseInt(num, 10) - 1;
     if (idx < 0 || idx >= conditions.length)
@@ -63,13 +68,18 @@ function buildWhereClause(filters) {
 
 // ---- Current User ----
 
-async function getCurrentUserId(session) {
+async function getUserInfo(session) {
   const resp = await fetch(`${session.instanceUrl}/services/oauth2/userinfo`, {
     headers: { Authorization: `Bearer ${session.sid}` },
   });
   if (!resp.ok) throw new Error(`Could not fetch current user info (HTTP ${resp.status}).`);
   const info = await resp.json();
   if (!info.user_id) throw new Error("user_id missing in userinfo response.");
+  return info;
+}
+
+async function getCurrentUserId(session) {
+  const info = await getUserInfo(session);
   return info.user_id;
 }
 
@@ -102,6 +112,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     getConfig: () => handleGetConfig(),
     getLogs: () => handleGetLogs(),
     clearLogs: () => handleClearLogs(),
+    getSession: () => handleGetSession(),
+    getEngagements: () => handleGetEngagements(msg.force),
   };
 
   const handler = handlers[msg.action];
@@ -114,6 +126,57 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 // ---- Handler Implementations ----
+
+async function handleGetSession() {
+  try {
+    const { domain } = await getFileConfig();
+    const session = await getSalesforceSession(domain);
+    if (!session) return { success: true, hasSession: false };
+    const info = await getUserInfo(session);
+    const userName = info.name || info.display_name || info.preferred_username || info.user_id;
+    return { success: true, hasSession: true, userName, userId: info.user_id };
+  } catch {
+    return { success: true, hasSession: false };
+  }
+}
+
+async function handleGetEngagements(force = false) {
+  try {
+    const cfg = await getFileConfig();
+    const session = await getSalesforceSession(cfg.domain);
+    if (!session) return { success: true, hasSession: false, records: [] };
+
+    if (!force) {
+      const cached = (await chrome.storage.local.get(ENGAGEMENTS_CACHE_KEY))[ENGAGEMENTS_CACHE_KEY];
+      if (cached && (Date.now() - cached.ts) < ENGAGEMENTS_CACHE_TTL_MS) {
+        return { success: true, hasSession: true, records: cached.records, view: cached.view, fromCache: true };
+      }
+    }
+
+    const info = await getUserInfo(session);
+    const userId = info.user_id;
+
+    const viewCfg = cfg.engagementsView || {};
+    const nameField   = viewCfg.nameField   || "Name";
+    const titleField  = viewCfg.titleField  || "Name";
+    const statusField = viewCfg.statusField || "Engagement_Status__c";
+    const stageField  = viewCfg.stageField  || "Stage__c";
+
+    const fields = [...new Set(["Id", nameField, titleField, statusField, stageField])];
+    const extraWhere = viewCfg.filters?.conditions?.length
+      ? ` AND ${buildWhereClause(viewCfg.filters)}`
+      : "";
+    const soql = `SELECT ${fields.join(", ")} FROM ${cfg.object} WHERE ${cfg.ownerFieldName} = '${userId}'${extraWhere} ORDER BY Name LIMIT 50`;
+
+    const result = await sfApiCall(session, `/services/data/${cfg.apiVersion}/query?q=${encodeURIComponent(soql)}`);
+    const records = result.records || [];
+    const view = { nameField, titleField, statusField, stageField };
+    await chrome.storage.local.set({ [ENGAGEMENTS_CACHE_KEY]: { ts: Date.now(), records, view } });
+    return { success: true, hasSession: true, records, view };
+  } catch (err) {
+    return { success: false, hasSession: false, error: err.message, records: [] };
+  }
+}
 
 async function handleTestConnection() {
   const { domain, apiVersion } = await getFileConfig();
@@ -162,7 +225,8 @@ async function executeScheduledUpdate() {
   const storedData = await chrome.storage.local.get(STORAGE_KEY);
   const isActive = storedData[STORAGE_KEY]?.isActive !== false;
 
-  const { domain, apiVersion, maxRecords, logLevel, object: objectName, ownerFieldName, filters, updateFields } = await getFileConfig();
+  const { domain, apiVersion, maxRecords, logLevel, object: objectName, ownerFieldName, dailyScheduler } = await getFileConfig();
+  const { filters, updateFields } = dailyScheduler;
   const log = (level, message) =>
     isLevelEnabled(level, logLevel) ? addLog(level, message) : Promise.resolve();
 

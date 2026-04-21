@@ -25,6 +25,18 @@ function sendMsg(payload) {
   });
 }
 
+// ---- Theme ----
+function applyTheme(isLight) {
+  document.documentElement.classList.toggle("light", isLight);
+  $("#btnTheme").textContent = isLight ? "🌕" : "🌙";
+}
+
+$("#btnTheme").addEventListener("click", async () => {
+  const isLight = !document.documentElement.classList.contains("light");
+  applyTheme(isLight);
+  await sendMsg({ action: "saveConfig", config: { scheduledTime: $("#scheduledTime").value, isActive: $("#btnToggle").classList.contains("active"), theme: isLight ? "light" : "dark" } });
+});
+
 // ---- Toggle ----
 function applyToggleState(isActive) {
   const btn = $("#btnToggle");
@@ -45,14 +57,83 @@ $("#btnToggle").addEventListener("click", async () => {
   showToast("info", isActive ? "Updates activated." : "Updates deactivated — SOQL will still run.");
 });
 
+// ---- Tabs ----
+document.querySelectorAll(".tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
+    if (btn.dataset.tab === "engagements") loadEngagements();
+  });
+});
+
+// ---- Session User ----
+async function loadSessionUser() {
+  const resp = await sendMsg({ action: "getSession" });
+  const el = $("#sessionUser");
+  if (resp?.hasSession && resp.userName) {
+    el.textContent = resp.userName;
+    el.classList.remove("no-session");
+  } else {
+    el.textContent = "Not signed in";
+    el.classList.add("no-session");
+  }
+}
+
+// ---- Engagements ----
+async function loadEngagements(force = false) {
+  const list = $("#engList");
+  if (force) list.innerHTML = '<div class="eng-loading">Loading engagements…</div>';
+
+  const resp = await sendMsg({ action: "getEngagements", force });
+
+  if (!resp?.hasSession) {
+    list.innerHTML = '<div class="empty-msg">No Engagements</div>';
+    return;
+  }
+  if (!resp.success) {
+    list.innerHTML = `<div class="empty-msg">Error: ${escHtml(resp.error || "Unknown error")}</div>`;
+    return;
+  }
+  if (!resp.records.length) {
+    list.innerHTML = '<div class="empty-msg">No Engagements</div>';
+    return;
+  }
+
+  const { nameField, titleField, statusField, stageField } = resp.view;
+  const durations = [5, 10, 15, 30, 45, 60];
+
+  list.innerHTML = resp.records.map((r) => {
+    const name   = escHtml(r[nameField]   || "—");
+    const title  = escHtml(r[titleField]  || "—");
+    const status = escHtml(r[statusField] || "—");
+    const stage  = escHtml(r[stageField]  || "—");
+    const titlePart = nameField !== titleField ? ` — <span class="eng-title">${title}</span>` : "";
+    const opts = durations.map((d) => `<option value="${d}">${d} min</option>`).join("");
+    return `<div class="eng-card" data-id="${r.Id}">
+      <div class="eng-line1">${name}${titlePart}</div>
+      <div class="eng-line2">
+        <span class="eng-badge stage">${stage}</span>
+        <span class="eng-badge status">${status}</span>
+        <button class="btn-oncall">On Call</button>
+        <select class="eng-duration">${opts}</select>
+      </div>
+    </div>`;
+  }).join("");
+}
+
 // ---- Init ----
 document.addEventListener("DOMContentLoaded", async () => {
   const resp = await sendMsg({ action: "getConfig" });
   if (resp?.config) {
     $("#scheduledTime").value = resp.config.scheduledTime || "17:00";
     applyToggleState(resp.config.isActive !== false);
+    applyTheme(resp.config.theme === "light");
   }
   loadLogs();
+  loadSessionUser();
+  loadEngagements();
 });
 
 // ---- Auto-save on time change ----
@@ -63,6 +144,11 @@ $("#scheduledTime").addEventListener("change", async () => {
     resp.success ? "ok" : "error",
     resp.success ? `Scheduled time saved — daily run at ${config.scheduledTime}.` : resp.error
   );
+});
+
+// ---- Open Config ----
+$("#btnOpenConfig").addEventListener("click", () => {
+  window.open(chrome.runtime.getURL("config.json"), "_blank");
 });
 
 // ---- Run Now ----
@@ -99,6 +185,8 @@ async function loadLogs() {
     })
     .join("");
 }
+
+$("#btnRefreshEngagements").addEventListener("click", () => loadEngagements(true));
 
 $("#btnClearLogs").addEventListener("click", async () => {
   await sendMsg({ action: "clearLogs" });

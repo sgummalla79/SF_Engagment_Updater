@@ -19,16 +19,25 @@
       --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
     }
 
+    :root.light {
+      --bg: #f0f2f8;
+      --surface: #ffffff;
+      --surface2: #e4e7f0;
+      --border: #cdd1e0;
+      --text: #1a1d27;
+      --text-dim: #5a5e75;
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     html {
-      height: 500px;
+      height: 520px;
       overflow: hidden;
     }
 
     body {
-      width: 360px;
-      height: 500px;
+      width: 420px;
+      height: 520px;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -55,44 +64,26 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 14px 16px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-    }
-    .header svg { flex-shrink: 0; }
-    .header h1 { font-size: 15px; font-weight: 600; }
-    .header .sub { font-size: 11px; color: var(--text-dim); }
-
-    /* ---- Section 1: Controls ---- */
-    .controls {
-      display: flex;
-      align-items: center;
-      gap: 10px;
       padding: 12px 16px;
       background: var(--surface);
       border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
     }
-    .controls label {
+    .header img { flex-shrink: 0; }
+    .header-info { flex: 1; min-width: 0; }
+    .header h1 { font-size: 15px; font-weight: 600; }
+    .header .sub { font-size: 11px; color: var(--text-dim); }
+    .header .session-user {
       font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--text-dim);
+      color: var(--accent);
+      margin-top: 1px;
+      overflow: hidden;
+      text-overflow: ellipsis;
       white-space: nowrap;
     }
-    input[type="time"] {
-      padding: 6px 8px;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      color: var(--text);
-      font-size: 13px;
-      font-family: var(--font);
-      outline: none;
-      transition: border-color .15s;
-    }
-    input[type="time"]:focus { border-color: var(--accent); }
+    .header .session-user.no-session { color: var(--text-dim); }
 
+    /* ---- Buttons ---- */
     .btn {
       display: inline-flex;
       align-items: center;
@@ -125,6 +116,7 @@
       display: inline-flex;
       align-items: center;
       gap: 5px;
+      flex-shrink: 0;
     }
     .btn-toggle.active {
       background: rgba(61,214,140,0.12);
@@ -137,7 +129,67 @@
       color: var(--text-dim);
     }
 
-    /* ---- Section 2: Logs ---- */
+    /* ---- Tabs ---- */
+    .tab-bar {
+      display: flex;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 9px 0;
+      font-size: 12px;
+      font-weight: 600;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      transition: all .15s;
+      letter-spacing: 0.3px;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-panel { display: none; flex: 1; min-height: 0; flex-direction: column; overflow: hidden; }
+    .tab-panel.active { display: flex; }
+
+    /* ---- Controls ---- */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .controls label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+    input[type="time"] {
+      padding: 6px 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 13px;
+      font-family: var(--font);
+      outline: none;
+      transition: border-color .15s;
+    }
+    input[type="time"]:focus { border-color: var(--accent); }
+
+    /* ---- Logs ---- */
     .logs-section {
       flex: 1;
       min-height: 0;
@@ -151,6 +203,7 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 8px;
+      flex-shrink: 0;
     }
     .logs-title {
       font-size: 11px;
@@ -179,7 +232,83 @@
     .log-level.ERROR  { color: var(--red); }
     .log-level.SKIP   { color: var(--text-dim); }
     .log-msg { word-break: break-word; margin-top: 1px; }
+
+    /* ---- Engagements tab ---- */
+    .eng-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .eng-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+    }
+    .eng-line1 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 6px;
+    }
+    .eng-line1 .eng-title {
+      font-weight: 400;
+      color: var(--text-dim);
+    }
+    .eng-line2 {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .eng-badge {
+      font-size: 10px;
+      font-weight: 500;
+      padding: 1px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+      letter-spacing: 0.3px;
+      cursor: default;
+      user-select: none;
+    }
+    .eng-badge.status { color: #f0ac44; background: rgba(240,172,68,0.15); }
+    .eng-badge.stage  { color: #4f8ff7; background: rgba(79,143,247,0.15); }
+
+    :root.light .eng-badge.status { color: #92400e; background: #fde68a; }
+    :root.light .eng-badge.stage  { color: #1e3a8a; background: #bfdbfe; }
+    .btn-oncall {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: var(--radius);
+      border: none;
+      background: var(--green);
+      color: #0a2e1f;
+      cursor: pointer;
+      transition: opacity .15s;
+      white-space: nowrap;
+    }
+    .btn-oncall:hover { opacity: 0.85; }
+    .eng-duration {
+      font-size: 11px;
+      padding: 3px 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      cursor: pointer;
+      outline: none;
+    }
+    .eng-duration:focus { border-color: var(--accent); }
     .empty-msg { color: var(--text-dim); text-align: center; padding: 30px 0; }
+    .eng-loading { color: var(--text-dim); text-align: center; padding: 30px 0; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -188,32 +317,49 @@
 
   <!-- Header -->
   <div class="header">
-    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-      <rect width="28" height="28" rx="6" fill="#4f8ff7"/>
-      <path d="M8 14l4 4 8-8" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-    <div>
+    <img src="icons/icon48.png" width="28" height="28" style="border-radius:6px;" />
+    <div class="header-info">
       <h1>Architect Cadence</h1>
       <div class="sub">Auto-update Architect Engagements daily</div>
+      <div class="session-user no-session" id="sessionUser">Not signed in</div>
     </div>
-    <button class="btn btn-toggle active" id="btnToggle" style="margin-left:auto">● Active</button>
+    <button id="btnTheme" title="Toggle light/dark" style="background:none;border:none;cursor:pointer;font-size:16px;padding:4px;line-height:1;color:var(--text-dim);">🌙</button>
+    <button class="btn btn-toggle active" id="btnToggle">● Active</button>
   </div>
 
-  <!-- Section 1: Controls -->
-  <div class="controls">
-    <label for="scheduledTime">Daily Run</label>
-    <input type="time" id="scheduledTime" value="17:00" />
-    <button class="btn btn-primary" id="btnRunNow">Run Now</button>
+  <!-- Tab Bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="engagements">Engagements</button>
+    <button class="tab-btn" data-tab="schedule">Schedule</button>
   </div>
 
-  <!-- Section 2: Logs -->
-  <div class="logs-section">
-    <div class="logs-header">
-      <span class="logs-title">Execution History</span>
-      <button class="btn btn-danger btn-sm" id="btnClearLogs">Clear</button>
+  <!-- Tab: Schedule -->
+  <div class="tab-panel" id="tab-schedule">
+    <div class="controls">
+      <label for="scheduledTime">Daily Run</label>
+      <input type="time" id="scheduledTime" value="17:00" />
+      <button class="btn btn-primary" id="btnRunNow">Run Now</button>
+      <button class="btn btn-primary" id="btnOpenConfig">Show Config</button>
     </div>
-    <div class="log-list" id="logList">
-      <div class="empty-msg">No logs yet.</div>
+    <div class="logs-section">
+      <div class="logs-header">
+        <span class="logs-title">Execution History</span>
+        <button class="btn btn-danger btn-sm" id="btnClearLogs">Clear</button>
+      </div>
+      <div class="log-list" id="logList">
+        <div class="empty-msg">No logs yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Engagements -->
+  <div class="tab-panel active" id="tab-engagements">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px 0;flex-shrink:0;">
+      <span class="logs-title">My Engagements</span>
+      <button class="btn btn-sm" id="btnRefreshEngagements" style="background:var(--surface2);color:var(--text-dim);border:1px solid var(--border);">↺ Refresh</button>
+    </div>
+    <div class="eng-list" id="engList">
+      <div class="eng-loading">Loading engagements…</div>
     </div>
   </div>
 
